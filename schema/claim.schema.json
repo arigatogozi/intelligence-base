@@ -50,6 +50,20 @@
       "items": {"type": "string"},
       "description": "이 주장이 기반한 다른 주장(claim:...) 또는 외부 자료(doi:..., url:...)"
     },
+    "links": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["ref", "relation"],
+        "properties": {
+          "ref": {"type": "string"},
+          "relation": {"enum": ["derived", "distinct"]},
+          "by": {"type": "string"},
+          "at": {"type": "string", "format": "date-time"}
+        }
+      },
+      "description": "올릴 때 작성자가 유사 주장과의 관계를 직접 고른 기록. derived=이걸 발전시킴(계보에도 연결), distinct=비슷해 보이지만 다른 것. 플랫폼은 판정하지 않고 작성자의 선택을 기록만 한다."
+    },
     "contributors": {
       "type": "array",
       "items": {

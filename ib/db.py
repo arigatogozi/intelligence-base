@@ -38,6 +38,14 @@ CREATE TABLE IF NOT EXISTS trials (
     notes TEXT NOT NULL DEFAULT '',
     created_at TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS claim_links (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    claim_id TEXT NOT NULL REFERENCES claims(id),
+    ref TEXT NOT NULL,
+    relation TEXT NOT NULL CHECK (relation IN ('derived','distinct')),
+    created_by TEXT NOT NULL,
+    created_at TEXT NOT NULL
+);
 CREATE TABLE IF NOT EXISTS contributions (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     person_id TEXT NOT NULL REFERENCES people(id),
@@ -98,8 +106,12 @@ class Store:
         return [_person_row(r) for r in rows]
 
     # ---------- 주장 ----------
-    def add_claim(self, claim, domain, author_id, conditions=(), tags=(), derived_from=()):
+    def add_claim(self, claim, domain, author_id, conditions=(), tags=(), derived_from=(), links=()):
+        """links: 작성자가 사전 확인 단계에서 고른 관계 [{"ref": "claim:..", "relation": "derived|distinct"}]
+        relation이 derived인 것은 계보(derived_from)에도 자동으로 합쳐진다."""
         self.get_person(author_id)  # 없는 사람이면 NotFound
+        derived_from = list(dict.fromkeys(
+            list(derived_from) + [l["ref"] for l in links if l["relation"] == "derived"]))
         cid = "claim:" + uuid.uuid4().hex[:8]
         ts = now_iso()
         with self._conn() as c:
@@ -113,6 +125,11 @@ class Store:
                 "INSERT INTO contributions (person_id, claim_id, role, created_at) VALUES (?,?,?,?)",
                 (author_id, cid, "author", ts),
             )
+            for l in links:
+                c.execute(
+                    "INSERT INTO claim_links (claim_id, ref, relation, created_by, created_at) VALUES (?,?,?,?,?)",
+                    (cid, l["ref"], l["relation"], author_id, ts),
+                )
             # 다른 주장에서 파생됐다면, 원래 주장의 작성자에게도 'derived' 기여를 기록한다.
             for parent in derived_from:
                 if parent.startswith("claim:"):
@@ -135,7 +152,10 @@ class Store:
             contribs = c.execute(
                 "SELECT person_id, role, created_at FROM contributions WHERE claim_id=? ORDER BY id", (cid,)
             ).fetchall()
-        return _claim_to_protocol(row, trials, contribs)
+            links = c.execute(
+                "SELECT ref, relation, created_by, created_at FROM claim_links WHERE claim_id=? ORDER BY id", (cid,)
+            ).fetchall()
+        return _claim_to_protocol(row, trials, contribs, links)
 
     def list_claims(self):
         with self._conn() as c:
@@ -240,9 +260,11 @@ def _brief(c):
     return {"id": c["id"], "claim": c["claim"], "status": c["status"], "domain": c["context"]["domain"]}
 
 
-def _claim_to_protocol(row, trials, contribs):
+def _claim_to_protocol(row, trials, contribs, links=()):
     """DB의 한 줄을 프로토콜(schema/claim.schema.json) 모양으로 바꾼다."""
     return {
+        "links": [{"ref": l["ref"], "relation": l["relation"], "by": l["created_by"], "at": l["created_at"]}
+                  for l in links],
         "spec_version": models.SPEC_VERSION,
         "id": row["id"],
         "claim": row["claim"],

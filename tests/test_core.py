@@ -120,6 +120,7 @@ class HttpAndMcpTest(unittest.TestCase):
     @classmethod
     def tearDownClass(cls):
         cls.httpd.shutdown()
+        cls.httpd.server_close()
         cls.tmp.cleanup()
 
     def req(self, path, body=None):
@@ -161,7 +162,8 @@ class HttpAndMcpTest(unittest.TestCase):
                               capture_output=True, text=True, env={**os.environ, "IB_DB": self.db}, timeout=20)
         out = [json.loads(l) for l in proc.stdout.splitlines()]
         self.assertEqual([o["id"] for o in out], [1, 2, 3])
-        self.assertEqual(len(out[1]["result"]["tools"]), 3)
+        self.assertEqual({t["name"] for t in out[1]["result"]["tools"]},
+                         {"search_knowledge", "get_claim", "check_existing", "report_trial"})
         payload = json.loads(out[2]["result"]["content"][0]["text"])
         self.assertTrue(payload["tiers"]["verified"])
         self.assertIn("status", payload["tiers"]["verified"][0])

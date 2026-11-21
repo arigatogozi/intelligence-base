@@ -48,6 +48,19 @@ TOOLS = [
         },
     },
     {
+        "name": "check_existing",
+        "description": "새 아이디어를 제안하거나 올리기 전에, 비슷한 기존 주장(누가 언제 먼저 올렸는지 포함)과 "
+                       "외부 선행 자료가 있는지 확인한다. 비슷한 게 있으면 사용자에게 그 관계(같음/발전/다름)를 물어봐.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "claim": {"type": "string", "description": "확인할 아이디어 문장"},
+                "domain": {"type": "string"},
+            },
+            "required": ["claim"],
+        },
+    },
+    {
         "name": "report_trial",
         "description": "사용자가 어떤 주장을 실제로 적용해 본 결과를 기록한다. "
                        "사용자가 결과를 명시적으로 알려줬을 때만 호출해.",
@@ -89,6 +102,8 @@ def call_tool(service, name, args):
         }
     if name == "get_claim":
         return service.get_claim(args["claim_id"])
+    if name == "check_existing":
+        return service.precheck(args["claim"], args.get("domain"))
     if name == "report_trial":
         claim = service.add_trial(args["claim_id"], {
             "person_id": args["person_id"], "result": args["result"], "notes": args.get("notes", "")})

@@ -84,7 +84,8 @@
       <input name="tags" style="width:100%">
       <label>기반한 주장 ID (쉼표로 구분, 예: claim:ab12cd34)</label>
       <input name="derived_from" style="width:100%">
-      <div class="row" style="margin-top:12px"><button class="primary">올리기</button></div>
+      <div class="row" style="margin-top:12px"><button class="primary">비슷한 게 있는지 확인하기</button></div>
+      <div id="precheck"></div>
       <div id="postMsg"></div>
     </form>
   </section>
@@ -113,7 +114,7 @@ let people = [];
 async function api(path, opts = {}) {
   const res = await fetch(path, { headers: { "Content-Type": "application/json" }, ...opts });
   const data = await res.json();
-  if (!res.ok) throw new Error((data.details || [data.error]).join(", "));
+  if (!res.ok) throw new Error(data.message || (data.details || [data.error]).join(", "));
   return data;
 }
 
@@ -155,8 +156,9 @@ $("#searchForm").onsubmit = async (e) => {
 $("#tiers").onclick = (e) => { const c = e.target.closest(".card"); if (c) showDetail(c.dataset.id); };
 
 async function showDetail(id) {
-  const [c, lin, ver] = await Promise.all([
-    api(`/api/claims/${id}`), api(`/api/claims/${id}/lineage`), api(`/api/claims/${id}/verifiers`)]);
+  const [c, lin, ver, rel] = await Promise.all([
+    api(`/api/claims/${id}`), api(`/api/claims/${id}/lineage`), api(`/api/claims/${id}/verifiers`),
+    api(`/api/claims/${id}/related`)]);
   const vlist = [...ver.same_domain, ...ver.cross_domain].slice(0, 5);
   $("#detail").style.display = "block";
   $("#detail").innerHTML = `
@@ -174,6 +176,9 @@ async function showDetail(id) {
       <button class="primary" onclick="trial('${c.id}','success')">써 봤더니 됐어</button>
       <button class="primary" style="background:#5f5e5a" onclick="trial('${c.id}','fail')">안 됐어</button>
     </div><div id="trialMsg"></div>
+    ${c.links.length ? `<h3>작성자가 밝힌 관계</h3><ul>${c.links.map(l => `<li>${l.relation === "derived" ? "발전시킨 대상" : "비슷하지만 다르다고 표시"}: ${esc(l.ref)}</li>`).join("")}</ul>` : ""}
+    <h3>가까운 기술</h3><ul>
+      ${rel.related.map(r => `<li>${pill(r.status)} ${esc(r.claim)} <span class="meta">· ${r.cross_domain ? "다른 분야" : "같은 분야"} · 의미 ${r.signals.semantic} / 계보 ${r.signals.lineage} / 함께 시도 ${r.signals.co_trial}</span></li>`).join("") || "<li>아직 없음</li>"}</ul>
     <h3>검증해 줄 만한 사람</h3><ul>
       ${vlist.map(v => `<li>${esc(v.person.name)} · ${v.why.same_domain ? "같은 분야" : "다른 분야"} · ${esc(v.person.skills.join(", "))}</li>`).join("") || "<li>추천할 사람 없음</li>"}</ul>`;
 }
@@ -187,17 +192,56 @@ async function trial(id, result) {
   } catch (err) { $("#trialMsg").innerHTML = `<p class="err">${esc(err.message)}</p>`; }
 }
 
+// 1단계: 올리기 전에 비슷한 기존 주장과 외부 선행 자료를 보여주고, 작성자가 관계를 고르게 한다
 $("#postForm").onsubmit = async (e) => {
   e.preventDefault();
   const f = new FormData(e.target);
+  $("#postMsg").innerHTML = "";
+  try {
+    const r = await api("/api/claims/precheck", { method: "POST", body: JSON.stringify({
+      claim: f.get("claim"), domain: f.get("domain"), tags: list(f.get("tags")) }) });
+    const opts = Object.entries(r.choices).map(([k, v]) => `<option value="${k}" ${k === "distinct" ? "selected" : ""}>${v}</option>`).join("");
+    const sims = r.similar_existing.map(s => `<div class="card" style="cursor:default">
+        ${pill(s.status)} <span class="meta">${esc(s.domain)} · ${esc(nameOf(s.author))} · ${s.created_at.slice(0, 10)}에 먼저 올라옴 · 유사도 ${s.similarity}</span>
+        <p>${esc(s.claim)}</p>
+        <select data-ref="${s.id}" class="rel">${opts}</select></div>`).join("");
+    const arts = r.prior_art.items.filter(a => /^https?:\/\//.test(a.url))   // 외부 링크는 http(s)만 허용
+      .map(a => `<li><a href="${esc(a.url)}" target="_blank" rel="noopener">${esc(a.title)}</a> <span class="meta">${esc(a.published)}</span></li>`).join("");
+    $("#precheck").innerHTML = `
+      <h3 style="font-size:15px;margin:16px 0 4px">비슷한 기존 주장</h3>
+      <p class="meta">판정이 아니라 참고 정보야. 각각 어떤 관계인지 네가 골라줘.</p>
+      ${sims || '<div class="empty">비슷한 기존 주장 없음</div>'}
+      <h3 style="font-size:15px;margin:16px 0 4px">플랫폼 밖 선행 자료</h3>
+      ${arts ? `<p class="meta">이미 알려진 것일 수 있어. 확인해 봐.</p><ul>${arts}</ul>` : `<div class="empty">${esc(r.prior_art.note || "찾은 자료 없음")}</div>`}
+      <div class="row" style="margin-top:12px"><button type="button" class="primary" id="finalPost">이대로 올리기</button></div>`;
+    $("#finalPost").onclick = () => finalPost(f);
+  } catch (err) { $("#postMsg").innerHTML = `<p class="err">${esc(err.message)}</p>`; }
+};
+
+// 2단계: 고른 관계(links)와 함께 올린다. '같아'를 고르면 서버가 409로 막고 기존 주장으로 안내한다
+async function finalPost(f) {
+  const links = [...document.querySelectorAll("#precheck .rel")].map(s => ({ ref: s.dataset.ref, relation: s.value }));
+  const same = links.filter(l => l.relation === "same");
+  if (same.length) {
+    $("#postMsg").innerHTML = `<p class="err">이미 있는 주장과 같다고 골랐어. 새로 올리는 대신 그 주장에 써 본 결과를 남겨줘.</p>`
+      + same.map(l => `<button type="button" class="primary" style="margin-right:6px" onclick="goTo('${l.ref}')">${l.ref} 열기</button>`).join("");
+    return;
+  }
   try {
     const c = await api("/api/claims", { method: "POST", body: JSON.stringify({
       claim: f.get("claim"), domain: f.get("domain"), author_id: $("#me").value,
-      conditions: list(f.get("conditions")), tags: list(f.get("tags")), derived_from: list(f.get("derived_from")) }) });
-    $("#postMsg").innerHTML = `<p class="ok">올렸어: ${c.id} (미검증 최신 칸에 나타나)</p>`;
-    e.target.reset();
+      conditions: list(f.get("conditions")), tags: list(f.get("tags")), derived_from: list(f.get("derived_from")), links }) });
+    const nd = links.filter(l => l.relation === "derived").length;
+    $("#postMsg").innerHTML = `<p class="ok">올렸어: ${c.id}${nd ? ` · ${nd}개 주장을 발전시킨 것으로 계보에 연결했어` : ""}</p>`;
+    $("#postForm").reset();
+    $("#precheck").innerHTML = "";
   } catch (err) { $("#postMsg").innerHTML = `<p class="err">${esc(err.message)}</p>`; }
-};
+}
+
+function goTo(id) {
+  document.querySelector('nav button[data-tab="search"]').click();
+  showDetail(id);
+}
 
 $("#peopleForm").onsubmit = async (e) => {
   e.preventDefault();

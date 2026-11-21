@@ -62,7 +62,19 @@ def validate_claim_input(data):
     author = data.get("author_id")
     if not isinstance(author, str) or not author.startswith("user:"):
         errors.append("author_id는 user:로 시작해야 해")
+    links = data.get("links", [])
+    if not isinstance(links, list) or not all(
+            isinstance(l, dict) and isinstance(l.get("ref"), str) and l.get("relation") in LINK_CHOICES
+            for l in links):
+        errors.append("links는 [{ref, relation}] 목록이고 relation은 same/derived/distinct 중 하나여야 해")
     return errors
+
+
+# 사전 확인 단계에서 작성자가 고를 수 있는 선택지
+#   same     : 이미 있는 것과 같다 → 새로 올리지 않고 기존 주장에 시도 기록을 남기게 안내
+#   derived  : 이걸 발전시켰다   → 계보(derived_from)에 연결, 원작자에게 파생 기여 기록
+#   distinct : 비슷해 보이지만 다르다 → 작성자의 판단으로 기록만 남김
+LINK_CHOICES = ("same", "derived", "distinct")
 
 
 def validate_trial_input(data):

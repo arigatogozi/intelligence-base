@@ -15,7 +15,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
-from .service import NotFound, Service, ValidationError
+from .service import Conflict, NotFound, Service, ValidationError
 
 ROOT = Path(__file__).resolve().parent.parent
 WEB_DIR = ROOT / "web"
@@ -26,6 +26,8 @@ MAX_BODY = 64 * 1024
 ROUTES = [
     ("GET", r"^/api/claims$", "search_claims"),
     ("POST", r"^/api/claims$", "create_claim"),
+    ("POST", r"^/api/claims/precheck$", "precheck"),
+    ("GET", r"^/api/claims/(claim:[a-z0-9]+)/related$", "related"),
     ("GET", r"^/api/claims/(claim:[a-z0-9]+)$", "get_claim"),
     ("POST", r"^/api/claims/(claim:[a-z0-9]+)/trials$", "add_trial"),
     ("GET", r"^/api/claims/(claim:[a-z0-9]+)/lineage$", "lineage"),
@@ -73,6 +75,9 @@ def make_handler(service):
                         return self._send(400, {"error": "validation", "details": e.errors})
                     except NotFound as e:
                         return self._send(404, {"error": "not_found", "id": str(e)})
+                    except Conflict as e:
+                        return self._send(409, {"error": "same_as_existing", "message": str(e),
+                                                "existing": e.existing_ids})
             self._send(404, {"error": "no_route"})
 
         def do_GET(self):
@@ -100,6 +105,16 @@ def make_handler(service):
 
         def h_create_claim(self):
             return 201, service.create_claim(self._json_body())
+
+        def h_precheck(self):
+            b = self._json_body()
+            tags = b.get("tags", [])
+            if not isinstance(tags, list):
+                raise ValidationError(["tags는 목록이어야 해"])
+            return 200, service.precheck(b.get("claim"), b.get("domain"), [str(t) for t in tags])
+
+        def h_related(self, cid):
+            return 200, service.related(cid)
 
         def h_get_claim(self, cid):
             return 200, service.get_claim(cid)
