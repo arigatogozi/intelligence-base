@@ -1,0 +1,83 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://intelligence-base.example/schema/claim/v0.1",
+  "title": "Intelligence Base Knowledge Claim (v0.1)",
+  "description": "초기 기술·융합 분야의 지식/아이디어 한 단위. 검증 상태, 적용 맥락, 계보(어디서 파생됐나), 기여자, 시도 기록을 함께 담는다.",
+  "type": "object",
+  "required": ["spec_version", "id", "claim", "status", "context"],
+  "properties": {
+    "spec_version": {
+      "const": "0.1",
+      "description": "프로토콜 버전. 다른 제품이 이 값을 보고 해석 방법을 결정한다."
+    },
+    "id": {
+      "type": "string",
+      "pattern": "^claim:[a-z0-9]+$",
+      "description": "전역 고유 ID. 예: claim:3f9a1c2b"
+    },
+    "claim": {
+      "type": "string",
+      "minLength": 10,
+      "maxLength": 2000,
+      "description": "주장 본문. '무엇을 하면 무엇이 된다'처럼 시험해 볼 수 있게 쓴다."
+    },
+    "status": {
+      "enum": ["unverified", "in_review", "reproduced", "refuted"],
+      "description": "unverified=시도 없음, in_review=시도 진행 중/결과 엇갈림, reproduced=여러 사람이 재현 성공, refuted=여러 사람이 재현 실패"
+    },
+    "context": {
+      "type": "object",
+      "required": ["domain"],
+      "properties": {
+        "domain": {
+          "type": "string",
+          "pattern": "^[a-z0-9-]+$",
+          "description": "분야 식별자. 예: protein-design, llm-agents"
+        },
+        "conditions": {
+          "type": "array",
+          "items": {"type": "string"},
+          "description": "이 주장이 성립한다고 확인된 조건. 예: 모델 버전, 데이터 규모"
+        }
+      }
+    },
+    "tags": {
+      "type": "array",
+      "items": {"type": "string"}
+    },
+    "derived_from": {
+      "type": "array",
+      "items": {"type": "string"},
+      "description": "이 주장이 기반한 다른 주장(claim:...) 또는 외부 자료(doi:..., url:...)"
+    },
+    "contributors": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["person", "role"],
+        "properties": {
+          "person": {"type": "string", "description": "user:... 형식 ID"},
+          "role": {"enum": ["author", "trial", "derived"]},
+          "at": {"type": "string", "format": "date-time"}
+        }
+      },
+      "description": "누가 어떤 역할로 기여했나. Hypercerts 같은 기여 기록 표준으로 내보낼 수 있다."
+    },
+    "trials": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["by", "result"],
+        "properties": {
+          "by": {"type": "string"},
+          "result": {"enum": ["success", "fail"]},
+          "notes": {"type": "string"},
+          "at": {"type": "string", "format": "date-time"}
+        }
+      },
+      "description": "실제로 써 본 기록. 이 기록이 쌓여 status가 자동으로 바뀐다(사용이 곧 검증)."
+    },
+    "created_at": {"type": "string", "format": "date-time"}
+  },
+  "additionalProperties": false
+}

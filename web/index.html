@@ -1,0 +1,232 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Intelligence Base · 초기 기술 놀이터</title>
+<style>
+  :root { --bg:#f7f6f2; --card:#fff; --ink:#1f1e1b; --muted:#6b6a64; --line:#e2e0d8;
+          --ok:#0f6e56; --okbg:#e1f5ee; --mid:#854f0b; --midbg:#faeeda; --new:#3c3489; --newbg:#eeedfe;
+          --bad:#a32d2d; --badbg:#fcebeb; --accent:#d85a30; }
+  * { box-sizing: border-box; }
+  body { margin:0; font-family: -apple-system, "Apple SD Gothic Neo", "Noto Sans KR", sans-serif;
+         background:var(--bg); color:var(--ink); line-height:1.6; }
+  header { padding:20px 24px 8px; }
+  header h1 { margin:0; font-size:20px; font-weight:600; }
+  header p { margin:2px 0 0; color:var(--muted); font-size:14px; }
+  nav { display:flex; gap:6px; padding:8px 24px; flex-wrap:wrap; }
+  nav button { border:1px solid var(--line); background:var(--card); padding:6px 14px; border-radius:999px; cursor:pointer; font-size:14px; }
+  nav button.on { background:var(--ink); color:#fff; border-color:var(--ink); }
+  main { padding:8px 24px 40px; max-width:1200px; }
+  .row { display:flex; gap:8px; flex-wrap:wrap; margin-bottom:14px; }
+  input, select, textarea { font:inherit; padding:8px 10px; border:1px solid var(--line); border-radius:8px; background:#fff; }
+  input[name=q], textarea { flex:1; min-width:220px; }
+  textarea { width:100%; min-height:70px; }
+  button.primary { background:var(--accent); color:#fff; border:0; padding:8px 16px; border-radius:8px; cursor:pointer; font:inherit; }
+  .tiers { display:grid; grid-template-columns:repeat(auto-fit, minmax(260px, 1fr)); gap:14px; }
+  .tier h2 { font-size:15px; margin:0 0 2px; }
+  .tier .hint { font-size:12px; color:var(--muted); margin:0 0 8px; }
+  .card { background:var(--card); border:1px solid var(--line); border-radius:10px; padding:12px; margin-bottom:8px; cursor:pointer; }
+  .card:hover { border-color:#b4b2a9; }
+  .card p { margin:6px 0 4px; font-size:14px; }
+  .meta { font-size:12px; color:var(--muted); }
+  .pill { display:inline-block; font-size:11px; padding:1px 8px; border-radius:999px; font-weight:600; }
+  .reproduced { background:var(--okbg); color:var(--ok); } .in_review { background:var(--midbg); color:var(--mid); }
+  .unverified { background:var(--newbg); color:var(--new); } .refuted { background:var(--badbg); color:var(--bad); }
+  .empty { font-size:13px; color:var(--muted); padding:8px 0; }
+  #detail { background:var(--card); border:1px solid var(--line); border-radius:12px; padding:16px; margin-top:18px; display:none; }
+  #detail h3 { margin:18px 0 6px; font-size:14px; }
+  #detail ul { margin:0; padding-left:18px; font-size:14px; }
+  .err { color:var(--bad); font-size:13px; }
+  .ok { color:var(--ok); font-size:13px; }
+  section.tab { display:none; } section.tab.on { display:block; }
+  label { font-size:13px; color:var(--muted); display:block; margin-top:8px; }
+</style>
+</head>
+<body>
+<header>
+  <h1>Intelligence Base</h1>
+  <p>아직 교과서가 없는 분야의 지식·아이디어를 찾고, 써 보고, 검증하는 놀이터 (MVP)</p>
+</header>
+<nav>
+  <button data-tab="search" class="on">지식 찾기</button>
+  <button data-tab="post">아이디어 올리기</button>
+  <button data-tab="people">사람 찾기</button>
+  <button data-tab="portfolio">기여 기록</button>
+</nav>
+<main>
+  <div class="row" style="align-items:center">
+    <span class="meta">나는</span>
+    <select id="me"></select>
+    <span class="meta">(데모용 사용자 선택: 실제 서비스에선 로그인으로 대체)</span>
+  </div>
+
+  <section class="tab on" id="tab-search">
+    <form class="row" id="searchForm">
+      <input name="q" placeholder="풀고 싶은 문제를 적어봐 (예: 단백질 후보를 빨리 줄이고 싶어)" required>
+      <input name="domain" placeholder="내 분야 (선택, 예: protein-design)" style="width:220px">
+      <button class="primary">찾기</button>
+    </form>
+    <div class="tiers" id="tiers"></div>
+    <p class="meta" id="refuted"></p>
+    <div id="detail"></div>
+  </section>
+
+  <section class="tab" id="tab-post">
+    <form id="postForm" style="max-width:640px">
+      <label>주장 (무엇을 하면 무엇이 된다)</label>
+      <textarea name="claim" required></textarea>
+      <label>분야 ID (영어 소문자·하이픈)</label>
+      <input name="domain" required placeholder="llm-agents">
+      <label>성립 조건 (쉼표로 구분)</label>
+      <input name="conditions" style="width:100%">
+      <label>태그 (쉼표로 구분)</label>
+      <input name="tags" style="width:100%">
+      <label>기반한 주장 ID (쉼표로 구분, 예: claim:ab12cd34)</label>
+      <input name="derived_from" style="width:100%">
+      <div class="row" style="margin-top:12px"><button class="primary">올리기</button></div>
+      <div id="postMsg"></div>
+    </form>
+  </section>
+
+  <section class="tab" id="tab-people">
+    <form class="row" id="peopleForm">
+      <input name="q" placeholder="필요한 역량이나 문제 (예: 단백질 실험을 자동화할 에이전트)" required>
+      <input name="domain" placeholder="분야 (선택)" style="width:200px">
+      <button class="primary">매칭</button>
+    </form>
+    <div class="tiers" id="peopleResult"></div>
+  </section>
+
+  <section class="tab" id="tab-portfolio"><div id="portfolio"></div></section>
+</main>
+
+<script>
+const STATUS_KO = { reproduced:"재현됨", in_review:"검증 중", unverified:"미검증", refuted:"반박됨" };
+const ROLE_KO = { author:"작성", trial:"검증 시도", derived:"내 주장을 기반으로 파생" };
+const $ = (s) => document.querySelector(s);
+const esc = (s) => String(s).replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const pill = (st) => `<span class="pill ${st}">${STATUS_KO[st]}</span>`;
+const list = (v) => v.split(",").map(s => s.trim()).filter(Boolean);
+let people = [];
+
+async function api(path, opts = {}) {
+  const res = await fetch(path, { headers: { "Content-Type": "application/json" }, ...opts });
+  const data = await res.json();
+  if (!res.ok) throw new Error((data.details || [data.error]).join(", "));
+  return data;
+}
+
+document.querySelectorAll("nav button").forEach(b => b.onclick = () => {
+  document.querySelectorAll("nav button, section.tab").forEach(x => x.classList.remove("on"));
+  b.classList.add("on");
+  $("#tab-" + b.dataset.tab).classList.add("on");
+  if (b.dataset.tab === "portfolio") loadPortfolio();
+});
+
+async function loadPeople() {
+  people = (await api("/api/people")).people;
+  $("#me").innerHTML = people.map(p => `<option value="${p.id}">${esc(p.name)} (${p.id})</option>`).join("");
+}
+const nameOf = (id) => (people.find(p => p.id === id) || { name: id }).name;
+
+function card(c) {
+  return `<div class="card" data-id="${c.id}">${pill(c.status)} <span class="meta">${esc(c.context.domain)} · 시도 ${c.trials.length}회</span>
+    <p>${esc(c.claim)}</p></div>`;
+}
+
+const TIERS = [
+  ["verified", "검증됨", "여러 사람이 재현에 성공한 것. 먼저 믿고 써도 돼."],
+  ["similar_context", "유사 맥락 해법", "다른 분야에서 나온 비슷한 해법. 융합의 씨앗."],
+  ["fresh", "미검증 최신", "최근 올라온 최전선 아이디어. 가설로만 취급하고 써 본 결과를 남겨줘."],
+];
+
+$("#searchForm").onsubmit = async (e) => {
+  e.preventDefault();
+  const f = new FormData(e.target);
+  const qs = new URLSearchParams({ q: f.get("q"), domain: f.get("domain") });
+  const res = await api("/api/claims?" + qs);
+  $("#tiers").innerHTML = TIERS.map(([k, title, hint]) => `<div class="tier"><h2>${title}</h2><p class="hint">${hint}</p>
+    ${res.tiers[k].map(card).join("") || '<div class="empty">해당 없음</div>'}</div>`).join("");
+  $("#refuted").textContent = res.refuted_hidden ? `반박된 주장 ${res.refuted_hidden}개는 숨겼어.` : "";
+  $("#detail").style.display = "none";
+};
+
+$("#tiers").onclick = (e) => { const c = e.target.closest(".card"); if (c) showDetail(c.dataset.id); };
+
+async function showDetail(id) {
+  const [c, lin, ver] = await Promise.all([
+    api(`/api/claims/${id}`), api(`/api/claims/${id}/lineage`), api(`/api/claims/${id}/verifiers`)]);
+  const vlist = [...ver.same_domain, ...ver.cross_domain].slice(0, 5);
+  $("#detail").style.display = "block";
+  $("#detail").innerHTML = `
+    ${pill(c.status)} <span class="meta">${c.id} · ${esc(c.context.domain)}</span>
+    <p style="font-size:16px;margin:8px 0">${esc(c.claim)}</p>
+    <h3>성립 조건</h3><ul>${c.context.conditions.map(x => `<li>${esc(x)}</li>`).join("") || "<li>명시 안 됨</li>"}</ul>
+    <h3>계보</h3><ul>
+      ${lin.ancestors.map(a => `<li>기반: ${a.external ? esc(a.id) + " (외부 자료)" : pill(a.status) + " " + esc(a.claim)}</li>`).join("")}
+      ${lin.descendants.map(d => `<li>파생: ${pill(d.status)} ${esc(d.claim)}</li>`).join("")}
+      ${!lin.ancestors.length && !lin.descendants.length ? "<li>연결된 주장 없음</li>" : ""}</ul>
+    <h3>시도 기록 (사용이 곧 검증)</h3><ul>
+      ${c.trials.map(t => `<li>${esc(nameOf(t.by))}: ${t.result === "success" ? "성공" : "실패"} ${t.notes ? "· " + esc(t.notes) : ""}</li>`).join("") || "<li>아직 없음</li>"}</ul>
+    <div class="row" style="margin-top:10px">
+      <input id="trialNotes" placeholder="메모 (선택)" style="flex:1">
+      <button class="primary" onclick="trial('${c.id}','success')">써 봤더니 됐어</button>
+      <button class="primary" style="background:#5f5e5a" onclick="trial('${c.id}','fail')">안 됐어</button>
+    </div><div id="trialMsg"></div>
+    <h3>검증해 줄 만한 사람</h3><ul>
+      ${vlist.map(v => `<li>${esc(v.person.name)} · ${v.why.same_domain ? "같은 분야" : "다른 분야"} · ${esc(v.person.skills.join(", "))}</li>`).join("") || "<li>추천할 사람 없음</li>"}</ul>`;
+}
+
+async function trial(id, result) {
+  try {
+    const c = await api(`/api/claims/${id}/trials`, { method: "POST",
+      body: JSON.stringify({ person_id: $("#me").value, result, notes: $("#trialNotes").value }) });
+    await showDetail(id);
+    $("#trialMsg").innerHTML = `<p class="ok">기록했어. 현재 상태: ${STATUS_KO[c.status]}</p>`;
+  } catch (err) { $("#trialMsg").innerHTML = `<p class="err">${esc(err.message)}</p>`; }
+}
+
+$("#postForm").onsubmit = async (e) => {
+  e.preventDefault();
+  const f = new FormData(e.target);
+  try {
+    const c = await api("/api/claims", { method: "POST", body: JSON.stringify({
+      claim: f.get("claim"), domain: f.get("domain"), author_id: $("#me").value,
+      conditions: list(f.get("conditions")), tags: list(f.get("tags")), derived_from: list(f.get("derived_from")) }) });
+    $("#postMsg").innerHTML = `<p class="ok">올렸어: ${c.id} (미검증 최신 칸에 나타나)</p>`;
+    e.target.reset();
+  } catch (err) { $("#postMsg").innerHTML = `<p class="err">${esc(err.message)}</p>`; }
+};
+
+$("#peopleForm").onsubmit = async (e) => {
+  e.preventDefault();
+  const f = new FormData(e.target);
+  const res = await api("/api/match/people?" + new URLSearchParams({ q: f.get("q"), domain: f.get("domain") }));
+  const col = (title, arr) => `<div class="tier"><h2>${title}</h2>${arr.map(r => `<div class="card" style="cursor:default">
+    <b>${esc(r.person.name)}</b> <span class="meta">점수 ${r.score}</span><p>${esc(r.person.skills.join(", "))}</p>
+    <span class="meta">분야: ${esc(r.person.domains.join(", "))}</span></div>`).join("") || '<div class="empty">해당 없음</div>'}</div>`;
+  $("#peopleResult").innerHTML = col("같은 분야", res.same_domain) + col("다른 분야 (융합 후보)", res.cross_domain);
+};
+
+async function loadPortfolio() {
+  const p = await api(`/api/people/${$("#me").value}/portfolio`);
+  const s = p.summary;
+  $("#portfolio").innerHTML = `<h2 style="font-size:17px">${esc(p.person.name)}의 기여 기록</h2>
+    <p class="meta">작성 ${s.authored}건 (그중 재현됨 ${s.authored_reproduced}건) · 검증 시도 ${s.trials}건 · 다른 사람이 내 주장 위에 쌓은 것 ${s.built_upon_by_others}건</p>
+    ${p.contributions.map(i => `<div class="card" style="cursor:default">${pill(i.status)} <span class="meta">${ROLE_KO[i.role]} · ${i.at.slice(0, 10)}</span><p>${esc(i.claim)}</p></div>`).join("") || '<div class="empty">아직 기여가 없어</div>'}`;
+}
+$("#me").onchange = () => { if ($("#tab-portfolio").classList.contains("on")) loadPortfolio(); };
+
+loadPeople().then(() => {
+  // 주소에 ?q=...&domain=... 가 있으면 바로 검색 (검색 결과 링크 공유용)
+  const u = new URLSearchParams(location.search);
+  if (u.get("q")) {
+    const f = $("#searchForm");
+    f.q.value = u.get("q"); f.domain.value = u.get("domain") || "";
+    f.requestSubmit();
+  }
+});
+</script>
+</body>
+</html>
